@@ -24,42 +24,35 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
   const [sortOrder, setSortOrder] = useState("newest");
   const [filterType, setFilterType] = useState("all");
 
-  // SAVE HISTORY
   useEffect(() => {
     localStorage.setItem("history", JSON.stringify(history));
   }, [history]);
 
-  // DEFAULT MOVIES (FIRST LOAD)
   useEffect(() => {
-    fetchMovies(1, "avengers");
+    fetchMovies("avengers");
   }, []);
 
-  // PAGE CHANGE
-  useEffect(() => {
-    if (search !== "") {
-      fetchMovies(page);
-    }
-  }, [page]);
-
-  // FETCH MOVIES
-  const fetchMovies = async (pageNumber, query = search) => {
+  // FETCH MULTIPLE PAGES
+  const fetchMovies = async (query = search) => {
     try {
       setLoading(true);
       setError("");
 
-      const res = await fetch(
-        `https://www.omdbapi.com/?s=${query}&page=${pageNumber}&apikey=${API_KEY}`
-      );
+      let allMovies = [];
 
-      const data = await res.json();
+      for (let i = 1; i <= 5; i++) {
+        const res = await fetch(
+          `https://www.omdbapi.com/?s=${query}&page=${i}&apikey=${API_KEY}`
+        );
 
-      if (data.Response === "False") {
-        setError("No Matched Result Found");
-        setMovies([]);
-        return;
+        const data = await res.json();
+
+        if (data.Response === "False") break;
+
+        allMovies = [...allMovies, ...data.Search];
       }
 
-      setMovies(data.Search);
+      setMovies(allMovies);
     } catch {
       setError("Unable to fetch movies.");
       setMovies([]);
@@ -68,7 +61,6 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
     }
   };
 
-  // SEARCH
   const handleSearch = () => {
     if (search.trim() === "") {
       setError("Enter movie name");
@@ -76,7 +68,7 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
     }
 
     setPage(1);
-    fetchMovies(1);
+    fetchMovies(search);
 
     setHistory((prev) => {
       const updated = [search, ...prev.filter((i) => i !== search)];
@@ -86,15 +78,13 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
     setShowHistory(false);
   };
 
-  // HISTORY CLICK
   const handleHistoryClick = (item) => {
     setSearch(item);
     setPage(1);
-    fetchMovies(1);
+    fetchMovies(item); // FIXED (was wrong before)
     setShowHistory(false);
   };
 
-  // MOVIE DETAILS
   const fetchMovieDetails = async (id) => {
     try {
       setLoading(true);
@@ -118,7 +108,7 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
     }
   };
 
-  //SORT + FILTER
+  // FILTER + SORT
   const filteredMovies = movies
     .filter((m) => (filterType === "all" ? true : m.Type === filterType))
     .sort((a, b) =>
@@ -127,9 +117,20 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
         : a.Year.localeCompare(b.Year)
     );
 
+  // PAGINATION
+  const itemsPerPage = 10;
+  const startIndex = (page - 1) * itemsPerPage;
+
+  const paginatedMovies = filteredMovies.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
+
+  // TOTAL PAGES (IMPORTANT FIX)
+  const totalPages = Math.ceil(filteredMovies.length / itemsPerPage);
+
   return (
     <div>
-      {/* SEARCH BAR + CONTROLS */}
       <div style={styles.searchContainer}>
         <div style={{ position: "relative" }}>
           <input
@@ -140,7 +141,6 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
             onFocus={() => setShowHistory(true)}
           />
 
-          {/* HISTORY DROPDOWN */}
           {showHistory && history.length > 0 && (
             <div
               style={{
@@ -152,13 +152,7 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
               {history.map((item, i) => (
                 <div
                   key={i}
-                  style={{
-                    ...styles.historyItem,
-                    borderBottom:
-                      theme === "dark"
-                        ? "1px solid #333"
-                        : "1px solid #eee",
-                  }}
+                  style={styles.historyItem}
                   onClick={() => handleHistoryClick(item)}
                 >
                   {item}
@@ -190,35 +184,43 @@ function Home({ setSelectedMovie, favorites, toggleFavorite, theme }) {
         </select>
       </div>
 
-      {/* CONTENT */}
       {loading && <Loader />}
       {!loading && error && <p>{error}</p>}
 
       <MovieList
-        movies={filteredMovies}
+        movies={paginatedMovies}
         onSelect={fetchMovieDetails}
         favorites={favorites}
         onToggleFav={toggleFavorite}
         theme={theme}
       />
 
-      {/* PAGINATION */}
-      {movies.length > 0 && (
+      {/* PAGINATION FIXED */}
+      {filteredMovies.length > 0 && (
         <div style={{ marginTop: "20px" }}>
-          <button onClick={() => setPage((p) => p - 1)} disabled={page === 1}>
+          <button
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 1}
+          >
             Prev
           </button>
 
-          <span style={{ margin: "0 10px" }}>Page {page}</span>
+          <span style={{ margin: "0 10px" }}>
+            Page {page} / {totalPages}
+          </span>
 
-          <button onClick={() => setPage((p) => p + 1)}>Next</button>
+          <button
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page === totalPages}    
+          >
+            Next
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-//  STYLES
 const styles = {
   searchContainer: {
     display: "flex",
@@ -228,26 +230,22 @@ const styles = {
     marginTop: "20px",
     flexWrap: "wrap",
   },
-
   input: {
     padding: "8px",
     width: "250px",
     borderRadius: "5px",
     border: "1px solid #ccc",
   },
-
   button: {
     padding: "8px 15px",
     cursor: "pointer",
     borderRadius: "5px",
     border: "none",
   },
-
   dropdown: {
     padding: "8px",
     borderRadius: "5px",
   },
-
   historyBox: {
     position: "absolute",
     top: "40px",
@@ -257,7 +255,6 @@ const styles = {
     zIndex: 10,
     border: "1px solid #ccc",
   },
-
   historyItem: {
     padding: "8px",
     cursor: "pointer",
